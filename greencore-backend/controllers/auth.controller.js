@@ -19,7 +19,6 @@ import {
 
 const googleClient = new OAuth2Client(config.google.clientId);
 
-// ── Token Helpers ──
 function generateAccessToken(user) {
   return jwt.sign({ id: user._id, role: user.role }, config.jwt.secret, {
     expiresIn: config.jwt.expire,
@@ -32,30 +31,30 @@ function generateRefreshToken(user) {
   });
 }
 
-
 function setTokenCookies(res, accessToken, refreshToken) {
   const isProduction = config.env === "production";
+  
+  const cookieOptions = {
+    httpOnly: true,
+    secure: true,
+    sameSite: isProduction ? 'none' : 'lax',
+    path: "/",
+  };
 
   res.cookie("accessToken", accessToken, {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    ...cookieOptions,
     maxAge: 15 * 60 * 1000,
-    path: "/",
   });
 
   res.cookie("refreshToken", refreshToken, {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    ...cookieOptions,
     maxAge: 7 * 24 * 60 * 60 * 1000,
-    path: "/api/auth/refresh",
   });
 }
 
 function clearTokenCookies(res) {
   res.clearCookie("accessToken", { path: "/" });
-  res.clearCookie("refreshToken", { path: "/api/auth/refresh" });
+  res.clearCookie("refreshToken", { path: "/" });
 }
 
 function sanitize(str) {
@@ -66,9 +65,6 @@ function sanitize(str) {
     .trim();
 }
 
-// ═══════════════════════════════════════════
-// REGISTER
-// ═══════════════════════════════════════════
 export const register = async (req, res, next) => {
   try {
     let { name, username, email, password } = req.body;
@@ -137,9 +133,6 @@ export const register = async (req, res, next) => {
   }
 };
 
-// ═══════════════════════════════════════════
-// LOGIN
-// ═══════════════════════════════════════════
 export const login = async (req, res, next) => {
   try {
     const { login: loginField, password } = req.body;
@@ -207,9 +200,6 @@ export const login = async (req, res, next) => {
   }
 };
 
-// ═══════════════════════════════════════════
-// LOGOUT
-// ═══════════════════════════════════════════
 export const logout = async (req, res, next) => {
   try {
     const refreshToken = req.cookies?.refreshToken;
@@ -227,9 +217,6 @@ export const logout = async (req, res, next) => {
   }
 };
 
-// ═══════════════════════════════════════════
-// REFRESH TOKEN
-// ═══════════════════════════════════════════
 export const refreshToken = async (req, res, next) => {
   try {
     const token = req.cookies?.refreshToken;
@@ -251,7 +238,6 @@ export const refreshToken = async (req, res, next) => {
       );
     }
 
-    // Rotate tokens
     user.removeRefreshToken(token);
     const newAccessToken = generateAccessToken(user);
     const newRefreshToken = generateRefreshToken(user);
@@ -281,9 +267,6 @@ export const refreshToken = async (req, res, next) => {
   }
 };
 
-// ═══════════════════════════════════════════
-// GET CURRENT USER (GET /auth/me)
-// ═══════════════════════════════════════════
 export const getMe = async (req, res) => {
   res.json({
     success: true,
@@ -291,43 +274,18 @@ export const getMe = async (req, res) => {
   });
 };
 
-// ═══════════════════════════════════════════
-// GOOGLE OAUTH
-// ═══════════════════════════════════════════
 export const googleAuth = async (req, res, next) => {
   try {
-    const { code, redirect_uri } = req.body;
-
-    if (!code) throw new ValidationError("Codice Google mancante.");
-    if (!redirect_uri) throw new ValidationError("redirect_uri mancante.");
-
-    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        code,
-        client_id: config.google.clientId,
-        client_secret: config.google.clientSecret,
-        redirect_uri,
-        grant_type: "authorization_code",
-      }),
-    });
-
-    const tokenData = await tokenRes.json();
-    if (!tokenData.id_token) {
-      throw new AuthenticationError("Google OAuth failed: token non ricevuto.");
-    }
+    const { idToken } = req.body;
+    if (!idToken) throw new ValidationError("Google ID Token mancante.");
 
     const ticket = await googleClient.verifyIdToken({
-      idToken: tokenData.id_token,
+      idToken,
       audience: config.google.clientId,
     });
 
-    const payload = ticket.getPayload();
-    const { sub: googleId, email, name, picture } = payload;
-
-    if (!email)
-      throw new ValidationError("Email non disponibile dal profilo Google.");
+    const { sub: googleId, email, name, picture } = ticket.getPayload();
+    if (!email) throw new ValidationError("Email non disponibile da Google.");
 
     let user = await User.findOne({
       provider: "google",
@@ -342,21 +300,19 @@ export const googleAuth = async (req, res, next) => {
         const withTokens = await User.findById(existingByEmail._id).select(
           "+refreshTokens"
         );
-        Object.assign(withTokens, {
-          provider: "google",
-          providerId: googleId,
-          avatar: picture || withTokens.avatar,
-        });
+        withTokens.provider = "google";
+        withTokens.providerId = googleId;
+        withTokens.avatar = picture || withTokens.avatar;
         user = withTokens;
       } else {
-        const username = email
-          .split("@")[0]
+        const baseUsername = (name || email.split("@")[0])
           .replace(/[^a-zA-Z0-9_]/g, "_")
           .substring(0, 25);
-        let uniqueUsername = username;
+
+        let uniqueUsername = baseUsername;
         let counter = 1;
         while (await User.findOne({ username: uniqueUsername.toLowerCase() })) {
-          uniqueUsername = `${username}${counter}`;
+          uniqueUsername = `${baseUsername}${counter}`;
           counter++;
         }
 
@@ -402,9 +358,6 @@ export const googleAuth = async (req, res, next) => {
   }
 };
 
-// ═══════════════════════════════════════════
-// GITHUB OAUTH
-// ═══════════════════════════════════════════
 export const githubAuth = async (req, res, next) => {
   try {
     const { code } = req.body;
@@ -531,9 +484,6 @@ export const githubAuth = async (req, res, next) => {
   }
 };
 
-// ═══════════════════════════════════════════
-// FORGOT PASSWORD
-// ═══════════════════════════════════════════
 export const forgotPassword = async (req, res, next) => {
   try {
     const { email } = req.body;
@@ -569,9 +519,6 @@ export const forgotPassword = async (req, res, next) => {
   }
 };
 
-// ═══════════════════════════════════════════
-// RESET PASSWORD
-// ═══════════════════════════════════════════
 export const resetPassword = async (req, res, next) => {
   try {
     const { token } = req.params;
@@ -617,9 +564,6 @@ export const resetPassword = async (req, res, next) => {
   }
 };
 
-// ═══════════════════════════════════════════
-// RECOVER USERNAME
-// ═══════════════════════════════════════════
 export const recoverUsername = async (req, res, next) => {
   try {
     const { email } = req.body;

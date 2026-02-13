@@ -23,19 +23,22 @@ function generateRefreshToken(user) {
 
 function setTokenCookies(res, accessToken, refreshToken) {
   const isProduction = config.env === 'production';
+  
+  const cookieOptions = {
+    httpOnly: true,
+    secure: true,
+    sameSite: isProduction ? 'none' : 'lax',
+    path: '/',
+  };
+  
   res.cookie('accessToken', accessToken, {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'strict' : 'lax',
+    ...cookieOptions,
     maxAge: 15 * 60 * 1000,
-    path: '/',
   });
+  
   res.cookie('refreshToken', refreshToken, {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'strict' : 'lax',
+    ...cookieOptions,
     maxAge: 7 * 24 * 60 * 60 * 1000,
-    path: '/',
   });
 }
 
@@ -133,7 +136,10 @@ export const googleOAuth = async (req, res, next) => {
     res.json({
       success: true,
       message: 'Login con Google effettuato!',
-      data: { user: user.toJSON() },
+      data: { 
+        user: user.toJSON(),
+        accessToken
+      },
     });
   } catch (error) {
     if (error.response?.data?.error === 'invalid_grant') {
@@ -143,7 +149,7 @@ export const googleOAuth = async (req, res, next) => {
       });
     }
     if (error.response?.data?.error === 'invalid_client') {
-      logger.error('Google OAuth: invalid_client — controlla GOOGLE_CLIENT_SECRET nel .env');
+      logger.error('Google OAuth: invalid_client – controlla GOOGLE_CLIENT_SECRET nel .env');
       return res.status(500).json({
         success: false,
         message: 'Configurazione Google OAuth non valida.',
@@ -225,7 +231,10 @@ export const githubOAuth = async (req, res, next) => {
     res.json({
       success: true,
       message: 'Login con GitHub effettuato!',
-      data: { user: user.toJSON() },
+      data: { 
+        user: user.toJSON(),
+        accessToken
+      },
     });
   } catch (error) {
     logger.error('GitHub OAuth Error:', { error: error.response?.data || error.message });
