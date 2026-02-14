@@ -7,6 +7,16 @@ function req(key, fb) {
   return v;
 }
 
+function parseCorsOrigin() {
+  const origin = process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:3000';
+  
+  if (origin.includes(',')) {
+    return origin.split(',').map(o => o.trim());
+  }
+  
+  return origin;
+}
+
 const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT, 10) || 10000,
@@ -23,7 +33,7 @@ const config = {
     refreshExpire: process.env.JWT_REFRESH_EXPIRE || '7d',
   },
   cors: {
-    origin: process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: parseCorsOrigin(),
     credentials: true,
   },
   bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS, 10) || 12,

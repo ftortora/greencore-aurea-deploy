@@ -1,11 +1,3 @@
-// backend/server.js — Green Core AUREA v5.2 (ORIGINAL + PATCH)
-// ✅ trust proxy
-// ✅ disable ETag (stop 304 issues)
-// ✅ CORS headers ok (NO custom headers that break preflight)
-// ✅ no-store headers for /api
-// ✅ healthRoutes mounted correctly
-// ✅ clean route order + 404 + errorHandler
-
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -29,10 +21,7 @@ import healthRoutes from "./routes/health.js";
 
 const app = express();
 
-// ✅ FIX: important when behind reverse proxy / render
 app.set("trust proxy", 1);
-
-// ✅ FIX: evita ETag/304 sulle API (axios spesso riceve body vuoto su 304)
 app.disable("etag");
 
 app.use(
@@ -44,26 +33,33 @@ app.use(
 
 app.use(compression());
 
-// ───────────────────────────────────────────────
-// CORS
-// ───────────────────────────────────────────────
-app.use(
-  cors({
-    origin: config.cors.origin,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    // ✅ NO x-skip-auth-refresh (ti causava CORS preflight fail)
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "X-CSRF-Token",
-      "X-Correlation-ID",
-      "X-Requested-With",
-    ],
-  })
-);
+const corsOptions = {
+  origin: function (origin, callback) {
+    const allowedOrigins = Array.isArray(config.cors.origin) 
+      ? config.cors.origin 
+      : [config.cors.origin];
+    
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else if (origin.endsWith('.vercel.app')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-CSRF-Token',
+    'X-Correlation-ID',
+    'X-Requested-With',
+  ],
+};
 
-// ✅ FIX: no-store su tutta la /api (prima delle routes)
+app.use(cors(corsOptions));
+
 app.use("/api", (req, res, next) => {
   res.setHeader(
     "Cache-Control",
@@ -88,17 +84,13 @@ app.use(
 
 app.use("/api", apiLimiter);
 
-// ✅ Health routes (router)
 app.use("/api/health", healthRoutes);
-
-// App routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/energy", energyRoutes);
 app.use("/api/newsletter", newsletterRoutes);
 app.use("/api/admin", adminRoutes);
 
-// 404
 app.use("/api/*", (req, res) => {
   res.status(404).json({
     success: false,
@@ -107,12 +99,8 @@ app.use("/api/*", (req, res) => {
   });
 });
 
-// Error handler (must be last)
 app.use(errorHandler);
 
-// ───────────────────────────────────────────────
-// Start + Graceful Shutdown
-// ───────────────────────────────────────────────
 async function startServer() {
   try {
     await connectDB();
