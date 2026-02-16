@@ -278,11 +278,31 @@ export const getMe = async (req, res) => {
 
 export const googleAuth = async (req, res, next) => {
     try {
-        const { idToken } = req.body;
-        if (!idToken) throw new ValidationError("Google ID Token mancante.");
+        const { code, redirect_uri } = req.body;
+        if (!code) throw new ValidationError("Codice Google mancante.");
+
+        const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                code,
+                client_id: config.google.clientId,
+                client_secret: config.google.clientSecret,
+                redirect_uri,
+                grant_type: "authorization_code",
+            }),
+        });
+
+        const tokenData = await tokenRes.json();
+
+        if (tokenData.error || !tokenData.id_token) {
+            throw new AuthenticationError(
+                `Google OAuth failed: ${tokenData.error_description || tokenData.error || "Unknown error"}`
+            );
+        }
 
         const ticket = await googleClient.verifyIdToken({
-            idToken,
+            idToken: tokenData.id_token,
             audience: config.google.clientId,
         });
 
