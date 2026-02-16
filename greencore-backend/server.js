@@ -28,7 +28,6 @@ app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
     contentSecurityPolicy: config.env === "production" ? undefined : false,
 }));
-
 app.use(compression());
 
 const corsOptions = {
@@ -44,7 +43,6 @@ const corsOptions = {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Correlation-ID', 'X-Requested-With'],
 };
-
 app.use(cors(corsOptions));
 
 app.use("/api", (req, res, next) => {
@@ -85,30 +83,27 @@ app.use(errorHandler);
 async function startServer() {
     try {
         await connectDB();
-
         const server = app.listen(config.port, () => {
-            logger.info(`Server running on port ${config.port} (${config.env})`);
+            logger.info(`System: Green Core AUREA | Active on port ${config.port}`);
+            logger.info(`Lead Developer: Francesco Tortora`);
         });
 
         const shutdown = (signal) => {
             server.close(async () => {
                 await disconnectDB();
-                logger.info(`Server closed by ${signal}`);
+                logger.info(`Graceful shutdown initiated (${signal})`);
                 process.exit(0);
             });
-
             setTimeout(() => process.exit(1), 10000);
         };
 
         process.on("SIGTERM", () => shutdown("SIGTERM"));
         process.on("SIGINT", () => shutdown("SIGINT"));
-
     } catch (error) {
-        logger.error("Startup error", { error: error.message });
+        logger.error("Bootstrap failure", { error: error.message });
         process.exit(1);
     }
 }
 
 startServer();
-
 export default app;
